@@ -25,8 +25,8 @@ async function addSlide(text: string, image: HTMLImageElement) {
   const slide = document.createElement('div');
   slide.className = 'slide';
   slide.appendChild(image);
-  const caption = document.createElement('p');
-  caption.innerHTML = marked(text);
+  const caption = document.createElement('div'); // Changed to div to match CSS
+  caption.innerHTML = marked.parse(text); // Use marked.parse instead of marked directly
   slide.appendChild(caption);
   slideshow.appendChild(slide);
 }
@@ -43,13 +43,14 @@ async function handleUserInput() {
   
   try {
     for await (const chunk of chat.sendMessageStream(input + instructions)) {
-      if (!chunk.candidates?.length) continue;
-      const content = chunk.candidates[0]?.content;
-      if (!content?.parts?.length) continue;
+      if (!chunk.candidates || chunk.candidates.length === 0) continue;
+      const candidate = chunk.candidates[0];
+      if (!candidate || !candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) continue;
       
-      const text = content.parts[0]?.text ?? '';
-      const imageData = content.parts[1]?.inlineData?.data;
-      const mimeType = content.parts[1]?.inlineData?.mimeType;
+      const parts = candidate.content.parts;
+      const text = typeof parts[0]?.text === 'string' ? parts[0].text : '';
+      const imageData = parts[1]?.inlineData?.data;
+      const mimeType = parts[1]?.inlineData?.mimeType;
       
       if (text && imageData && mimeType) {
         const image = document.createElement('img');
@@ -63,7 +64,7 @@ async function handleUserInput() {
   } catch (err) {
     modelOutput.innerHTML = '';
     error.hidden = false;
-    error.textContent = (err as Error).message;
+    error.textContent = err instanceof Error ? err.message : String(err);
   }
 }
 
@@ -75,7 +76,5 @@ userInput?.addEventListener('keydown', (event) => {
 });
 
 submitButton?.addEventListener('click', () => {
-  if (!userInput) return;
-  const enterEvent = new KeyboardEvent('keydown', { key: 'Enter' });
-  userInput.dispatchEvent(enterEvent);
+  handleUserInput();
 });
