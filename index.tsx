@@ -3,20 +3,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {GoogleGenAI} from '@google/genai';
-import {marked} from 'marked';
+import { GoogleGenAI } from '@google/genai';
+import { marked } from 'marked';
 
-const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const chat = ai.chats.create({
   model: 'gemini-2.0-flash-exp',
   config: {
     responseModalities: ['TEXT', 'IMAGE'],
   },
-  history: [],
 });
 
 const userInput = document.querySelector('#input') as HTMLTextAreaElement;
+const submitButton = document.querySelector('#submit-button') as HTMLButtonElement;
 const modelOutput = document.querySelector('#output') as HTMLDivElement;
 const slideshow = document.querySelector('#slideshow') as HTMLDivElement;
 const error = document.querySelector('#error') as HTMLDivElement;
@@ -31,105 +31,54 @@ Keep going until you're done.`;
 async function addSlide(text: string, image: HTMLImageElement) {
   const slide = document.createElement('div');
   slide.className = 'slide';
-  const caption = document.createElement('div') as HTMLDivElement;
-  caption.innerHTML = await marked.parse(text);
-  slide.append(image);
-  slide.append(caption);
-  slideshow.append(slide);
+  slide.appendChild(image);
+  const caption = document.createElement('p');
+  caption.innerHTML = marked(text);
+  slide.appendChild(caption);
+  slideshow.appendChild(slide);
 }
 
-function parseError(error: string) {
-  const regex = /{"error":(.*)}/gm;
-  const m = regex.exec(error);
-  try {
-    const e = m[1];
-    const err = JSON.parse(e);
-    return err.message;
-  } catch (e) {
-    return error;
-  }
-}
-
-async function generate(message: string) {
-  userInput.disabled = true;
-
-  chat.history.length = 0;
-  modelOutput.innerHTML = '';
+async function handleUserInput() {
+  const input = userInput?.value;
+  if (!input) return;
   slideshow.innerHTML = '';
-  error.innerHTML = '';
-  error.toggleAttribute('hidden', true);
-
+  slideshow.hidden = true;
+  error.hidden = true;
+  modelOutput.innerHTML = 'Generating tiny cats...';
+  
   try {
-    const userTurn = document.createElement('div') as HTMLDivElement;
-    userTurn.innerHTML = await marked.parse(message);
-    userTurn.className = 'user-turn';
-    modelOutput.append(userTurn);
-    userInput.value = '';
-
-    const result = await chat.sendMessageStream({
-      message: message + additionalInstructions,
-    });
-
-    let text = '';
-    let img = null;
-
-    for await (const chunk of result) {
-      for (const candidate of chunk.candidates) {
-        for (const part of candidate.content.parts ?? []) {
-          if (part.text) {
-            text += part.text;
-          } else {
-            try {
-              const data = part.inlineData;
-              if (data) {
-                img = document.createElement('img');
-                img.src = `data:image/png;base64,` + data.data;
-              } else {
-                console.log('no data', chunk);
-              }
-            } catch (e) {
-              console.log('no data', chunk);
-            }
-          }
-          if (text && img) {
-            await addSlide(text, img);
-            slideshow.removeAttribute('hidden');
-            text = '';
-            img = null;
-          }
-        }
+    for await (const chunk of chat.sendMessageStream(input + additionalInstructions)) {
+      if (!chunk.candidates?.length) continue;
+      const content = chunk.candidates[0]?.content;
+      if (!content) continue;
+      
+      const text = content.parts?.[0]?.text;
+      const imageData = content.parts?.[1]?.inlineData?.data;
+      const mimeType = content.parts?.[1]?.inlineData?.mimeType;
+      
+      if (text && imageData && mimeType) {
+        const image = document.createElement('img');
+        image.src = `data:${mimeType};base64,${imageData}`;
+        addSlide(text, image);
       }
     }
-    if (img) {
-      await addSlide(text, img);
-      slideshow.removeAttribute('hidden');
-      text = '';
-    }
-  } catch (e) {
-    const msg = parseError(e);
-    error.innerHTML = `Something went wrong: ${msg}`;
-    error.removeAttribute('hidden');
+    
+    modelOutput.innerHTML = '';
+    slideshow.hidden = false;
+  } catch (err) {
+    modelOutput.innerHTML = '';
+    error.hidden = false;
+    error.textContent = (err as string).toString();
   }
-  userInput.disabled = false;
-  userInput.focus();
 }
 
-userInput.addEventListener('keydown', async (e: KeyboardEvent) => {
-  if (e.code === 'Enter') {
-    e.preventDefault();
-    const message = userInput.value;
-    await generate(message);
+userInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    handleUserInput();
   }
 });
 
-const examples = document.querySelectorAll('#examples li');
-examples.forEach((li) =>
-  li.addEventListener('click', async (e) => {
-    await generate(li.textContent);
-  }),
-);
-
-const submitButton = document.querySelector('#submit-button') as HTMLButtonElement;
 submitButton.addEventListener('click', () => {
   const enterEvent = new KeyboardEvent('keydown', { key: 'Enter' });
   userInput.dispatchEvent(enterEvent);
