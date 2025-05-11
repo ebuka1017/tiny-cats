@@ -26,8 +26,9 @@ async function addSlide(text: string, image: HTMLImageElement) {
   slide.className = 'slide';
   slide.appendChild(image);
   const caption = document.createElement('div'); // Changed from p to div to match CSS
-  // Fixed to use a synchronous call instead of potentially returning a Promise
-  caption.innerHTML = marked.parse(text);
+  
+  // Fixed: Use toString() to ensure we get a string not a Promise
+  caption.innerHTML = marked.parse(text).toString();
   slide.appendChild(caption);
   slideshow.appendChild(slide);
 }
@@ -43,10 +44,12 @@ async function handleUserInput() {
   modelOutput.innerHTML = 'Generating tiny cats...';
   
   try {
-    // Fix for TS2504 and TS2345 - use the correct API signature
-    for await (const chunk of chat.sendMessageStream({
-      content: input + instructions
-    })) {
+    // Fixed API call structure to match GoogleGenAI's API expectations
+    const result = await chat.sendMessageStream([
+      { role: 'user', parts: [{ text: input + instructions }] }
+    ]);
+    
+    for await (const chunk of result) {
       if (!chunk.candidates || chunk.candidates.length === 0) continue;
       
       const candidate = chunk.candidates[0];
