@@ -12,6 +12,7 @@ const submitButton = document.querySelector('#submit-button') as HTMLButtonEleme
 const modelOutput = document.querySelector('#output') as HTMLDivElement | null;
 const slideshow = document.querySelector('#slideshow') as HTMLDivElement | null;
 const error = document.querySelector('#error') as HTMLDivElement | null;
+const examples = document.querySelector('#examples') as HTMLUListElement | null;
 
 const instructions = `
 Use a fun story about lots of tiny cats as a metaphor.
@@ -25,41 +26,56 @@ async function addSlide(text: string, image: HTMLImageElement) {
   const slide = document.createElement('div');
   slide.className = 'slide';
   slide.appendChild(image);
-  const caption = document.createElement('div'); // Changed from p to div to match CSS
+  const caption = document.createElement('div');
   
-  // Fixed: Make sure we get a string from marked.parse
+  // ensure we get a string from marked.parse
   caption.innerHTML = marked.parse(text).toString();
   slide.appendChild(caption);
   slideshow.appendChild(slide);
 }
 
-async function handleUserInput() {
-  if (!userInput || !slideshow || !modelOutput || !error) return;
-  const input = userInput.value;
-  if (!input) return;
+async function handleUserInput(input ? : string) {
+  if (!slideshow || !modelOutput || !error) return;
+  
+  // if no input is provided, use the value from the text area
+  const userPrompt = input || (userInput ? userInput.value : '');
+  if (!userPrompt) return;
   
   slideshow.innerHTML = '';
   slideshow.hidden = true;
   error.hidden = true;
-  modelOutput.innerHTML = 'Generating tiny cats...';
+  modelOutput.innerHTML = 'generating tiny cats...';
   
   try {
-    // Use a type assertion with any to bypass TypeScript's strict checking
-    // This allows the code to compile while maintaining the original structure
-    const result = await (chat.sendMessageStream as any)({
-      content: input + instructions
+    // create the contentUnion object properly
+    const result = await chat.sendMessageStream({
+      contents: [{
+        role: 'user',
+        parts: [{ text: userPrompt + instructions }]
+      }]
     });
     
     for await (const chunk of result) {
       if (!chunk.candidates || chunk.candidates.length === 0) continue;
       
       const candidate = chunk.candidates[0];
-      if (!candidate || !candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) continue;
+      if (!candidate?.content?.parts || candidate.content.parts.length === 0) continue;
       
       const parts = candidate.content.parts;
-      const text = typeof parts[0]?.text === 'string' ? parts[0].text : '';
-      const imageData = parts[1]?.inlineData?.data;
-      const mimeType = parts[1]?.inlineData?.mimeType;
+      
+      // handle text and image parts
+      let text = '';
+      let imageData = '';
+      let mimeType = '';
+      
+      for (const part of parts) {
+        if ('text' in part && typeof part.text === 'string') {
+          text = part.text;
+        } else if ('inlineData' in part && part.inlineData) {
+          imageData = part.inlineData.data || '';
+          mimeType = part.inlineData.mimeType || '';
+        }
+      }
       
       if (text && imageData && mimeType) {
         const image = document.createElement('img');
@@ -74,9 +90,11 @@ async function handleUserInput() {
     modelOutput.innerHTML = '';
     error.hidden = false;
     error.textContent = err instanceof Error ? err.message : String(err);
+    console.error(err);
   }
 }
 
+// add event listeners
 userInput?.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     event.preventDefault();
@@ -86,4 +104,16 @@ userInput?.addEventListener('keydown', (event) => {
 
 submitButton?.addEventListener('click', () => {
   handleUserInput();
+});
+
+// add click handlers for examples
+examples?.addEventListener('click', (event) => {
+  const target = event.target as HTMLElement;
+  if (target.tagName === 'LI') {
+    const exampleText = target.textContent;
+    if (userInput && exampleText) {
+      userInput.value = exampleText;
+      handleUserInput(exampleText);
+    }
+  }
 });
