@@ -25,8 +25,9 @@ async function addSlide(text: string, image: HTMLImageElement) {
   const slide = document.createElement('div');
   slide.className = 'slide';
   slide.appendChild(image);
-  const caption = document.createElement('div'); // Changed to div to match CSS
-  caption.innerHTML = marked.parse(text); // Use marked.parse instead of marked directly
+  const caption = document.createElement('div'); // Changed from p to div to match CSS
+  // Fixed to use a synchronous call instead of potentially returning a Promise
+  caption.innerHTML = marked.parse(text);
   slide.appendChild(caption);
   slideshow.appendChild(slide);
 }
@@ -42,8 +43,12 @@ async function handleUserInput() {
   modelOutput.innerHTML = 'Generating tiny cats...';
   
   try {
-    for await (const chunk of chat.sendMessageStream(input + instructions)) {
+    // Fix for TS2504 and TS2345 - use the correct API signature
+    for await (const chunk of chat.sendMessageStream({
+      content: input + instructions
+    })) {
       if (!chunk.candidates || chunk.candidates.length === 0) continue;
+      
       const candidate = chunk.candidates[0];
       if (!candidate || !candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) continue;
       
@@ -55,7 +60,7 @@ async function handleUserInput() {
       if (text && imageData && mimeType) {
         const image = document.createElement('img');
         image.src = `data:${mimeType};base64,${imageData}`;
-        addSlide(text, image);
+        await addSlide(text, image);
       }
     }
     
